@@ -56,20 +56,29 @@ export function checkActivity(action, details = {}) {
     try {
       const savedCanary = localStorage.getItem(CANARY_KEY);
 
-      if (!savedCanary) {
-        return;
-      }
+      if (savedCanary) {
+        const canary = JSON.parse(savedCanary);
 
-      const canary = JSON.parse(savedCanary);
-
-      if (canary.role === 'admin') {
-        reportIncident(
-          'canary',
-          'Обнаружена подмена роли visitor на admin'
-        );
+        if (canary.role === 'admin') {
+          reportIncident(
+            'canary',
+            'Обнаружена подмена роли visitor на admin'
+          );
+        }
       }
     } catch {
       // Повреждённый JSON не считается инцидентом!
+    }
+  }
+
+  if (action === 'startup') {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get('staff') === '1') {
+      reportIncident(
+        'staff-param',
+        'В адресе страницы обнаружен параметр staff=1'
+      );
     }
   }
 }
