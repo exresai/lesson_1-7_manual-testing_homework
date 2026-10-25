@@ -2,12 +2,14 @@ import { VERSION, listApplications, createApplication, setMode, resetData, getSt
 import { checkActivity, isRestricted, initializeSecurity, resetSecurity, reportIncident } from './security.js';
 
 const form = document.querySelector('#application-form');
+const submitButton = document.querySelector('#submit-button');
 const filter = document.querySelector('#filter');
 const list = document.querySelector('#application-list');
 const names = { html: 'HTML и CSS', javascript: 'JavaScript и DOM', api: 'HTTP и API' };
 let applications = [];
 let selectedId = null;
 let revision = 0;
+let isSubmitting = false;
 
 function setFormStatus(text, state = 'idle') {
   const status = document.querySelector('#form-status');
@@ -102,6 +104,7 @@ async function loadApplications() {
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
+  if (isSubmitting) return;
   const data = new FormData(form);
   const values = { name: String(data.get('name') || ''), topic: String(data.get('topic') || ''), comment: String(data.get('comment') || '') };
   if (!permitted('submit', { topic: values.topic, supportCode: String(data.get('supportCode') || '') })) return;
@@ -110,6 +113,9 @@ form.addEventListener('submit', async event => {
   const currentRevision = revision;
   setFormStatus('Отправляем заявку…', 'pending');
   form.setAttribute('aria-busy', 'true');
+  isSubmitting = true;
+  submitButton.disabled = true;
+
   try {
     const response = await createApplication({ ...values, name: values.name.trim() });
     const result = await response.json();
@@ -120,7 +126,7 @@ form.addEventListener('submit', async event => {
   } catch (error) {
     if (currentRevision === revision) setFormStatus(error.message || 'Не удалось отправить заявку.', 'error');
   } finally {
-    if (currentRevision === revision) form.setAttribute('aria-busy', 'false');
+    if (currentRevision === revision) { isSubmitting = false; submitButton.disabled = false; form.setAttribute('aria-busy', 'false'); }
   }
 });
 
