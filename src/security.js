@@ -1,24 +1,291 @@
 import { PREFIX } from './api.js';
 
 export const CANARY_KEY = `${PREFIX}canary`;
+const INCIDENTS_KEY = `${PREFIX}incidents`;
+const BLOCKED_UNTIL_KEY = `${PREFIX}blockedUntil`;
+const BLOCK_REASON_KEY = `${PREFIX}blockReason`;
+const BLOCK_DURATION = 30_000;
+const refreshTimes = [];
+let restrictionTimerId = null;
+
+function readIncidentLog() {
+  try {
+    const saved = localStorage.getItem(INCIDENTS_KEY);
+
+    if (!saved) {
+      return [];
+    }
+
+    const parsed = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function saveIncident(type, reason) {
+  const incident = {
+    time: new Date().toISOString(),
+    type,
+    reason
+  };
+
+  try {
+    const incidents = readIncidentLog();
+
+    incidents.unshift(incident);
+
+    const latestIncidents = incidents.slice(0, 30);
+
+    localStorage.setItem(
+      INCIDENTS_KEY,
+      JSON.stringify(latestIncidents)
+    );
+  } catch {
+    // Если localStorage недоступен, приложение продолжает работать.
+  }
+
+  return incident;
+}
+
+function renderIncidentLog() {
+  const incidents = readIncidentLog();
+
+  const list = document.querySelector('#incident-list');
+  const empty = document.querySelector('#incidents-empty');
+  const count = document.querySelector('#incident-count');
+
+  list.replaceChildren();
+
+  incidents.forEach((incident) => {
+    const item = document.createElement('li');
+
+    item.textContent =
+      `${incident.time} — ${incident.type}: ${incident.reason}`;
+
+    list.append(item);
+  });
+
+  count.textContent = String(incidents.length);
+  empty.hidden = incidents.length > 0;
+}
 
 // Временный вывод для проверки ловушек. Постоянный журнал добавляется в бонусе.
 export function reportIncident(type, reason) {
+  const incident = saveIncident(type, reason);
+  startRestriction(reason);
   const list = document.querySelector('#incident-list');
   const item = document.createElement('li');
-  item.textContent = `${type}: ${reason}`;
+  item.textContent = `${incident.time} — ${incident.type}: ${incident.reason}`;
   list.prepend(item);
   document.querySelector('#incidents-empty').hidden = true;
   document.querySelector('#incident-count').textContent = String(list.children.length);
 }
 
+function startRestriction(reason) {
+  try {
+    const savedUntil = Number(localStorage.getItem(BLOCKED_UNTIL_KEY));
+
+    if (savedUntil > Date.now()) {
+      return;
+    }
+
+    const blockedUntil = Date.now() + BLOCK_DURATION;
+
+    localStorage.setItem(
+      BLOCKED_UNTIL_KEY,
+      String(blockedUntil)
+    );
+
+    localStorage.setItem(BLOCK_REASON_KEY, reason);
+
+    document.querySelector('#security-status').textContent =
+      'Действия временно ограничены';
+
+    const detail = document.querySelector('#restriction-detail');
+    detail.hidden = false;
+    detail.textContent = reason;
+
+    updateRestrictionTimer();
+
+    if (!restrictionTimerId) {
+      restrictionTimerId = setInterval(
+        updateRestrictionTimer,
+        1000
+      );
+    }
+  } catch {
+    // Если storage недоступен, приложение не должно падать
+  }
+}
+
+function updateRestrictionTimer() {
+  try {
+    const blockedUntil = Number(
+      localStorage.getItem(BLOCKED_UNTIL_KEY)
+    );
+
+    const detail = document.querySelector('#restriction-detail');
+
+    if (!blockedUntil || Date.now() >= blockedUntil) {
+      if (restrictionTimerId) {
+        clearInterval(restrictionTimerId);
+        restrictionTimerId = null;
+      }
+
+      localStorage.removeItem(BLOCKED_UNTIL_KEY);
+      localStorage.removeItem(BLOCK_REASON_KEY);
+
+      document.querySelector('#security-status').textContent =
+        'Ограничений нет';
+
+      detail.hidden = true;
+      return;
+    }
+
+    const reason = localStorage.getItem(BLOCK_REASON_KEY) || 'Обнаружен инцидент';
+
+    const secondsLeft = Math.ceil(
+      (blockedUntil - Date.now()) / 1000
+    );
+
+    detail.hidden = false;
+    detail.textContent = `${reason}. Ограничение действует ещё ${secondsLeft} сек.`;
+  } catch {
+    // Не ломаем приложение, если storage недоступен.
+  }
+}
+
+function restoreRestriction() {
+  try {
+    const blockedUntil = Number(
+      localStorage.getItem(BLOCKED_UNTIL_KEY)
+    );
+
+    if (!blockedUntil || Date.now() >= blockedUntil) {
+      localStorage.removeItem(BLOCKED_UNTIL_KEY);
+      localStorage.removeItem(BLOCK_REASON_KEY);
+      return;
+    }
+
+    document.querySelector('#security-status').textContent =
+      'Действия временно ограничены';
+
+    updateRestrictionTimer();
+
+    if (!restrictionTimerId) {
+      restrictionTimerId = setInterval(
+        updateRestrictionTimer,
+        1000
+      );
+    }
+  } catch {
+    // Если storage недоступен, приложение продолжает работать
+  }
+}
+
 // События: startup, refresh, submit, decoy. Условия ловушек добавьте здесь.
 export function checkActivity(action, details = {}) {
+  if (action === 'refresh') {
+    const now = Date.now();
+    refreshTimes.push(now);
+
+    while (refreshTimes.length > 0 && now - refreshTimes[0] > 5000) {
+      refreshTimes.shift();
+    }
+
+    if (refreshTimes.length === 6) {
+      reportIncident(
+        'refresh',
+        'Шесть попыток обновить список за последние 5 секунд'
+      );
+    }
+  }
+
+  if (action === 'submit' && details.supportCode) {
+    reportIncident(
+      'supportCode',
+      'При отправке заполнено скрытое поле supportCode'
+    );
+  }
+
+  if (action === 'decoy') {
+    reportIncident(
+      'staff-export',
+      'Вызвана скрытая служебная кнопка staff-export'
+    );
+  }
+
+  if (action === 'submit' && details.topic && !['html', 'javascript', 'api'].includes(details.topic)) {
+    reportIncident(
+      'topic',
+      'Получено неизвестное направление'
+    );
+  }
+
+  if (action === 'startup') {
+    try {
+      const savedCanary = localStorage.getItem(CANARY_KEY);
+
+      if (savedCanary) {
+        const canary = JSON.parse(savedCanary);
+
+        if (canary.role === 'admin') {
+          reportIncident(
+            'canary',
+            'Обнаружена подмена роли visitor на admin'
+          );
+        }
+      }
+    } catch {
+      // Повреждённый JSON не считается инцидентом!
+    }
+  }
+
+  if (action === 'startup') {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get('staff') === '1') {
+      reportIncident(
+        'staff-param',
+        'В адресе страницы обнаружен параметр staff=1'
+      );
+    }
+  }
 }
 
 // Приложение вызывает эту функцию перед отправкой и обновлением списка.
 export function isRestricted() {
-  return false;
+  try {
+    const blockedUntil = Number(
+      localStorage.getItem(BLOCKED_UNTIL_KEY)
+    );
+
+    if (!blockedUntil) {
+      return false;
+    }
+
+    if (Date.now() >= blockedUntil) {
+      localStorage.removeItem(BLOCKED_UNTIL_KEY);
+      localStorage.removeItem(BLOCK_REASON_KEY);
+
+      document.querySelector('#security-status').textContent =
+        'Ограничений нет';
+
+      document.querySelector('#restriction-detail').hidden = true;
+
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function initializeSecurity() {
@@ -27,10 +294,19 @@ export function initializeSecurity() {
       localStorage.setItem(CANARY_KEY, JSON.stringify({ role: 'visitor' }));
     }
   } catch { /* Бонус должен учитывать недоступное хранилище. */ }
+  renderIncidentLog();
+  restoreRestriction();
   checkActivity('startup');
 }
 
 export function resetSecurity() {
+  refreshTimes.length = 0;
+
+  if (restrictionTimerId) {
+    clearInterval(restrictionTimerId);
+    restrictionTimerId = null;
+  }
+
   try {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith(PREFIX) && key !== `${PREFIX}applications`) localStorage.removeItem(key);

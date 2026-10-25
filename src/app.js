@@ -2,12 +2,14 @@ import { VERSION, listApplications, createApplication, setMode, resetData, getSt
 import { checkActivity, isRestricted, initializeSecurity, resetSecurity, reportIncident } from './security.js';
 
 const form = document.querySelector('#application-form');
+const submitButton = document.querySelector('#submit-button');
 const filter = document.querySelector('#filter');
 const list = document.querySelector('#application-list');
 const names = { html: 'HTML и CSS', javascript: 'JavaScript и DOM', api: 'HTTP и API' };
 let applications = [];
 let selectedId = null;
 let revision = 0;
+let isSubmitting = false;
 
 function setFormStatus(text, state = 'idle') {
   const status = document.querySelector('#form-status');
@@ -22,14 +24,14 @@ function permitted(action, details = {}) {
 }
 
 function validate(values) {
-  if (values.name.length < 2 || values.name.length > 60) return 'Имя должно содержать от 2 до 60 символов.';
+  if (values.name.trim().length < 2 || values.name.trim().length > 60) return 'Имя должно содержать от 2 до 60 символов.';
   if (!Object.hasOwn(names, values.topic)) return 'Выберите направление из списка.';
   if (values.comment.length > 200) return 'Комментарий должен быть не длиннее 200 символов.';
   return '';
 }
 
 function renderComment(element, text) {
-  element.innerHTML = text || 'Без комментария';
+  element.textContent = text || 'Без комментария';
 }
 
 function renderSelection() {
@@ -46,7 +48,7 @@ function renderApplications() {
   const visible = applications.filter(item => filter.value === 'all' || item.topic === filter.value);
   const focusedId = document.activeElement?.closest('.application-card')?.dataset.id;
   list.replaceChildren();
-  document.querySelector('#application-count').textContent = String(applications.length);
+  document.querySelector('#application-count').textContent = String(visible.length);
   document.querySelector('#empty-state').hidden = visible.length > 0;
 
   for (const application of visible) {
@@ -76,8 +78,7 @@ function renderApplications() {
     arrow.setAttribute('aria-hidden', 'true');
     body.append(name, topic, comment);
     card.append(index, body, arrow);
-    card.addEventListener('click', event => {
-      if (event.target !== card) return;
+    card.addEventListener('click', () => {
       selectedId = application.id;
       renderApplications();
     });
@@ -103,6 +104,7 @@ async function loadApplications() {
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
+  if (isSubmitting) return;
   const data = new FormData(form);
   const values = { name: String(data.get('name') || ''), topic: String(data.get('topic') || ''), comment: String(data.get('comment') || '') };
   if (!permitted('submit', { topic: values.topic, supportCode: String(data.get('supportCode') || '') })) return;
@@ -111,9 +113,17 @@ form.addEventListener('submit', async event => {
   const currentRevision = revision;
   setFormStatus('Отправляем заявку…', 'pending');
   form.setAttribute('aria-busy', 'true');
+  isSubmitting = true;
+  submitButton.disabled = true;
+
   try {
     const response = await createApplication({ ...values, name: values.name.trim() });
     const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error?.message || 'Не удалось отправить заявку.'
+      );
+    }
     if (currentRevision !== revision) return;
     setFormStatus('Заявка сохранена. Спасибо!', 'success');
     form.reset();
@@ -121,7 +131,7 @@ form.addEventListener('submit', async event => {
   } catch (error) {
     if (currentRevision === revision) setFormStatus(error.message || 'Не удалось отправить заявку.', 'error');
   } finally {
-    if (currentRevision === revision) form.setAttribute('aria-busy', 'false');
+    if (currentRevision === revision) { isSubmitting = false; submitButton.disabled = false; form.setAttribute('aria-busy', 'false'); }
   }
 });
 
@@ -137,6 +147,8 @@ document.querySelector('#refresh-button').addEventListener('click', () => {
 
 document.querySelector('#reset-interface').addEventListener('click', () => {
   form.reset();
+  selectedId = null;
+  filter.value = 'all';
   setFormStatus('Интерфейс сброшен.');
   renderApplications();
 });
