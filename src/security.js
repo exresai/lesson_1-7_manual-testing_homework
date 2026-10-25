@@ -31,6 +31,13 @@ export function checkActivity(action, details = {}) {
       );
     }
   }
+
+  if (action === 'submit' && details.supportCode) {
+    reportIncident(
+      'supportCode',
+      'При отправке заполнено скрытое поле supportCode'
+    );
+  }
 }
 
 // Приложение вызывает эту функцию перед отправкой и обновлением списка.
