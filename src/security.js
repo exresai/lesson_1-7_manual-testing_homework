@@ -17,7 +17,6 @@ export function reportIncident(type, reason) {
 export function checkActivity(action, details = {}) {
   if (action === 'refresh') {
     const now = Date.now();
-
     refreshTimes.push(now);
 
     while (refreshTimes.length > 0 && now - refreshTimes[0] > 5000) {
@@ -36,6 +35,20 @@ export function checkActivity(action, details = {}) {
     reportIncident(
       'supportCode',
       'При отправке заполнено скрытое поле supportCode'
+    );
+  }
+
+  if (action === 'decoy') {
+    reportIncident(
+      'staff-export',
+      'Вызвана скрытая служебная кнопка staff-export'
+    );
+  }
+
+  if (action === 'submit' && details.topic && !['html', 'javascript', 'api'].includes(details.topic)) {
+    reportIncident(
+      'topic',
+      'Получено неизвестное направление'
     );
   }
 }
