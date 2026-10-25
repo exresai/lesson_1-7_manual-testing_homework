@@ -119,6 +119,11 @@ form.addEventListener('submit', async event => {
   try {
     const response = await createApplication({ ...values, name: values.name.trim() });
     const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error?.message || 'Не удалось отправить заявку.'
+      );
+    }
     if (currentRevision !== revision) return;
     setFormStatus('Заявка сохранена. Спасибо!', 'success');
     form.reset();
