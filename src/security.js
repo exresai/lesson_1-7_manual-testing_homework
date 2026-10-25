@@ -1,13 +1,82 @@
 import { PREFIX } from './api.js';
 
 export const CANARY_KEY = `${PREFIX}canary`;
+const INCIDENTS_KEY = `${PREFIX}incidents`;
 const refreshTimes = [];
+
+function readIncidentLog() {
+  try {
+    const saved = localStorage.getItem(INCIDENTS_KEY);
+
+    if (!saved) {
+      return [];
+    }
+
+    const parsed = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function saveIncident(type, reason) {
+  const incident = {
+    time: new Date().toISOString(),
+    type,
+    reason
+  };
+
+  try {
+    const incidents = readIncidentLog();
+
+    incidents.unshift(incident);
+
+    const latestIncidents = incidents.slice(0, 30);
+
+    localStorage.setItem(
+      INCIDENTS_KEY,
+      JSON.stringify(latestIncidents)
+    );
+  } catch {
+    // Если localStorage недоступен, приложение продолжает работать.
+  }
+
+  return incident;
+}
+
+function renderIncidentLog() {
+  const incidents = readIncidentLog();
+
+  const list = document.querySelector('#incident-list');
+  const empty = document.querySelector('#incidents-empty');
+  const count = document.querySelector('#incident-count');
+
+  list.replaceChildren();
+
+  incidents.forEach((incident) => {
+    const item = document.createElement('li');
+
+    item.textContent =
+      `${incident.time} — ${incident.type}: ${incident.reason}`;
+
+    list.append(item);
+  });
+
+  count.textContent = String(incidents.length);
+  empty.hidden = incidents.length > 0;
+}
 
 // Временный вывод для проверки ловушек. Постоянный журнал добавляется в бонусе.
 export function reportIncident(type, reason) {
+  const incident = saveIncident(type, reason);
   const list = document.querySelector('#incident-list');
   const item = document.createElement('li');
-  item.textContent = `${type}: ${reason}`;
+  item.textContent = `${incident.time} — ${incident.type}: ${incident.reason}`;
   list.prepend(item);
   document.querySelector('#incidents-empty').hidden = true;
   document.querySelector('#incident-count').textContent = String(list.children.length);
@@ -94,6 +163,7 @@ export function initializeSecurity() {
       localStorage.setItem(CANARY_KEY, JSON.stringify({ role: 'visitor' }));
     }
   } catch { /* Бонус должен учитывать недоступное хранилище. */ }
+  renderIncidentLog();
   checkActivity('startup');
 }
 
