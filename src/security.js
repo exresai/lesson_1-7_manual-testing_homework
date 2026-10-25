@@ -51,6 +51,27 @@ export function checkActivity(action, details = {}) {
       'Получено неизвестное направление'
     );
   }
+
+  if (action === 'startup') {
+    try {
+      const savedCanary = localStorage.getItem(CANARY_KEY);
+
+      if (!savedCanary) {
+        return;
+      }
+
+      const canary = JSON.parse(savedCanary);
+
+      if (canary.role === 'admin') {
+        reportIncident(
+          'canary',
+          'Обнаружена подмена роли visitor на admin'
+        );
+      }
+    } catch {
+      // Повреждённый JSON не считается инцидентом!
+    }
+  }
 }
 
 // Приложение вызывает эту функцию перед отправкой и обновлением списка.
