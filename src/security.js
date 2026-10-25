@@ -48,6 +48,7 @@ export function initializeSecurity() {
 }
 
 export function resetSecurity() {
+  refreshTimes.length = 0;
   try {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith(PREFIX) && key !== `${PREFIX}applications`) localStorage.removeItem(key);
